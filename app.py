@@ -5,13 +5,16 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
-import plotly.graph_objects as go
 
 # Import our custom modules
 import config
 from data_fetcher import DataFetcher
 from strategies import create_strategy
-from core_models import time_to_expiration, implied_volatility
+from core_models import (
+    time_to_expiration, implied_volatility, 
+    calculate_option_price_advanced, compare_pricing_models,
+    get_model_recommendations, calculate_strategy_price_advanced
+)
 from plotting import plot_payoff_diagram, create_strategy_summary_table
 
 # Page configuration
@@ -46,6 +49,58 @@ st.markdown("""
     }
 </style>
 """, unsafe_allow_html=True)
+
+def get_options_data_for_strategy(fetcher, ticker, strategy_type, expiration_date):
+    """
+    Get options data for a specific strategy.
+    
+    Args:
+        fetcher: DataFetcher instance
+        ticker: Stock ticker
+        strategy_type: Type of strategy
+        expiration_date: Expiration date
+        
+    Returns:
+        Dict: Options data for the strategy
+    """
+    try:
+        # Get options chain
+        options_chain = fetcher.get_options_chain(ticker, expiration_date.strftime('%Y-%m-%d'))
+        
+        # Get available strikes
+        available_strikes = fetcher.get_strike_range(ticker, expiration_date.strftime('%Y-%m-%d'))
+        
+        # Get current price for moneyness calculations
+        current_price = st.session_state.current_price
+        
+        # Filter strikes around current price (within 20% range)
+        relevant_strikes = [s for s in available_strikes if 0.8 * current_price <= s <= 1.2 * current_price]
+        
+        # Get option quotes for relevant strikes
+        option_quotes = {}
+        
+        for strike in relevant_strikes[:10]:  # Limit to 10 strikes for performance
+            try:
+                call_quote = fetcher.get_option_quote(ticker, strike, expiration_date.strftime('%Y-%m-%d'), 'call')
+                put_quote = fetcher.get_option_quote(ticker, strike, expiration_date.strftime('%Y-%m-%d'), 'put')
+                
+                option_quotes[strike] = {
+                    'call': call_quote,
+                    'put': put_quote
+                }
+            except:
+                continue
+        
+        return {
+            'options_chain': options_chain,
+            'available_strikes': relevant_strikes,
+            'option_quotes': option_quotes,
+            'current_price': current_price
+        }
+        
+    except Exception as e:
+        st.error(f"Error fetching options data: {str(e)}")
+        return None
 
 def main():
     """Main application function."""
@@ -87,12 +142,19 @@ def main():
                     current_price = fetcher.get_stock_quote(ticker)
                     volatility = fetcher.get_historical_volatility(ticker)
                     
+                    # Check if ticker has options data
+                    has_options = fetcher.validate_ticker_has_options(ticker)
+                    
                     st.session_state.data_fetched = True
                     st.session_state.current_price = current_price
                     st.session_state.volatility = volatility
                     st.session_state.ticker = ticker
+                    st.session_state.has_options = has_options
                     
-                    st.success(f"✅ Data fetched successfully!")
+                    if has_options:
+                        st.success(f"✅ Data fetched successfully! Options data available.")
+                    else:
+                        st.warning(f"⚠️ Data fetched successfully, but no options data available for {ticker}. Manual input required.")
                     
                 except Exception as e:
                     st.error(f"❌ Error fetching data: {str(e)}")
@@ -103,6 +165,24 @@ def main():
             st.markdown("### 📈 Market Data")
             st.metric("Current Price", f"${st.session_state.current_price:.2f}")
             st.metric("Historical Volatility", f"{st.session_state.volatility:.1%}")
+            
+            # Display options data availability
+            if st.session_state.has_options:
+                st.markdown("### 📊 Options Data")
+                st.success("✅ Real-time options data available")
+                
+                # Cache stats
+                cache_stats = fetcher.get_cache_stats()
+                st.caption(f"Cache: {cache_stats['total_cached_items']} items")
+                
+                # Clear cache button
+                if st.button("🗑️ Clear Cache"):
+                    fetcher.clear_cache()
+                    st.success("Cache cleared!")
+                    st.rerun()
+            else:
+                st.markdown("### 📊 Options Data")
+                st.warning("⚠️ Manual input required")
             
             st.markdown("---")
         
@@ -136,6 +216,78 @@ def main():
             step=0.1,
             help="Annual risk-free interest rate"
         ) / 100
+        
+        # Pricing model selection
+        st.header("🧮 Pricing Model")
+        pricing_model = st.selectbox(
+            "Select Pricing Model",
+            [
+                "Black-Scholes",
+                "Binomial Tree (American)",
+                "Monte Carlo",
+                "Heston Model",
+                "Jump Diffusion",
+                "Model Comparison"
+            ],
+            help="Choose the pricing model for options analysis"
+        )
+        
+        # Advanced model parameters
+        if pricing_model == "Heston Model":
+            st.subheader("Heston Parameters")
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                kappa = st.number_input("Mean Reversion Speed (κ)", value=2.0, step=0.1)
+                theta = st.number_input("Long-term Volatility (θ)", value=0.04, step=0.01)
+                sigma_v = st.number_input("Vol of Vol (σᵥ)", value=0.3, step=0.01)
+            
+            with col2:
+                rho = st.number_input("Correlation (ρ)", value=-0.7, step=0.1, min_value=-1.0, max_value=1.0)
+                v0 = st.number_input("Initial Volatility (v₀)", value=0.04, step=0.01)
+        
+        elif pricing_model == "Jump Diffusion":
+            st.subheader("Jump Diffusion Parameters")
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                lambda_jump = st.number_input("Jump Intensity (λ)", value=0.1, step=0.01)
+                mu_jump = st.number_input("Mean Jump Size (μ)", value=-0.1, step=0.01)
+            
+            with col2:
+                sigma_jump = st.number_input("Jump Volatility (σ)", value=0.1, step=0.01)
+        
+        elif pricing_model == "Binomial Tree (American)":
+            st.subheader("Binomial Tree Parameters")
+            n_steps = st.number_input("Number of Steps", value=100, min_value=50, max_value=500)
+            american = st.checkbox("American Exercise", value=True)
+        
+        elif pricing_model == "Monte Carlo":
+            st.subheader("Monte Carlo Parameters")
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                n_simulations = st.number_input("Simulations", value=10000, min_value=1000, max_value=50000)
+                n_steps = st.number_input("Time Steps", value=100, min_value=50, max_value=500)
+            
+            with col2:
+                barrier_option = st.checkbox("Barrier Option")
+                if barrier_option:
+                    barrier = st.number_input("Barrier Level", value=100.0)
+                    barrier_type = st.selectbox("Barrier Type", 
+                                              ["down_and_out", "up_and_out", "down_and_in", "up_and_in"])
+        
+        # Data input mode selection
+        if st.session_state.data_fetched and st.session_state.has_options:
+            st.header("📊 Data Input Mode")
+            data_mode = st.radio(
+                "Choose data source:",
+                ["Real-time Options Data", "Manual Input"],
+                help="Select whether to use real-time options data or manual input"
+            )
+            st.session_state.data_mode = data_mode
+        else:
+            st.session_state.data_mode = "Manual Input"
     
     # Main content area
     if not st.session_state.data_fetched:
@@ -185,25 +337,105 @@ def main():
     
     if selected_strategy in ["Long Call", "Short Call", "Long Put", "Short Put"]:
         # Single leg strategies
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            strike = st.number_input(
-                "Strike Price",
-                min_value=0.01,
-                value=st.session_state.current_price,
-                step=0.01,
-                format="%.2f"
-            )
-        
-        with col2:
-            premium = st.number_input(
-                "Premium",
-                min_value=0.01,
-                value=1.0,
-                step=0.01,
-                format="%.2f"
-            )
+        if st.session_state.data_mode == "Real-time Options Data" and st.session_state.has_options:
+            # Use real options data
+            with st.spinner("Fetching options data..."):
+                fetcher = DataFetcher()
+                options_data = get_options_data_for_strategy(fetcher, st.session_state.ticker, selected_strategy, expiration_date)
+            
+            if options_data:
+                st.subheader("📊 Real-time Options Data")
+                
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    # Strike price selector
+                    available_strikes = options_data['available_strikes']
+                    if available_strikes:
+                        strike_idx = st.selectbox(
+                            "Select Strike Price",
+                            range(len(available_strikes)),
+                            format_func=lambda x: f"${available_strikes[x]:.2f}",
+                            help="Choose from available strike prices"
+                        )
+                        strike = available_strikes[strike_idx]
+                    else:
+                        strike = st.number_input(
+                            "Strike Price",
+                            min_value=0.01,
+                            value=st.session_state.current_price,
+                            step=0.01,
+                            format="%.2f"
+                        )
+                
+                with col2:
+                    # Premium from real data
+                    option_type = 'call' if 'Call' in selected_strategy else 'put'
+                    if strike in options_data['option_quotes']:
+                        real_premium = options_data['option_quotes'][strike][option_type]['lastPrice']
+                        premium = st.number_input(
+                            "Premium",
+                            min_value=0.01,
+                            value=max(real_premium, 0.01),
+                            step=0.01,
+                            format="%.2f",
+                            help=f"Real-time price: ${real_premium:.2f}"
+                        )
+                        
+                        # Show additional data
+                        quote_data = options_data['option_quotes'][strike][option_type]
+                        st.caption(f"Bid: ${quote_data['bid']:.2f} | Ask: ${quote_data['ask']:.2f}")
+                        st.caption(f"Volume: {quote_data['volume']} | OI: {quote_data['openInterest']}")
+                    else:
+                        premium = st.number_input(
+                            "Premium",
+                            min_value=0.01,
+                            value=1.0,
+                            step=0.01,
+                            format="%.2f"
+                        )
+            else:
+                st.error("Failed to fetch options data. Falling back to manual input.")
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    strike = st.number_input(
+                        "Strike Price",
+                        min_value=0.01,
+                        value=st.session_state.current_price,
+                        step=0.01,
+                        format="%.2f"
+                    )
+                
+                with col2:
+                    premium = st.number_input(
+                        "Premium",
+                        min_value=0.01,
+                        value=1.0,
+                        step=0.01,
+                        format="%.2f"
+                    )
+        else:
+            # Manual input
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                strike = st.number_input(
+                    "Strike Price",
+                    min_value=0.01,
+                    value=st.session_state.current_price,
+                    step=0.01,
+                    format="%.2f"
+                )
+            
+            with col2:
+                premium = st.number_input(
+                    "Premium",
+                    min_value=0.01,
+                    value=1.0,
+                    step=0.01,
+                    format="%.2f"
+                )
         
         strategy_params = {
             'strike': strike,
@@ -426,22 +658,181 @@ def main():
             'quantity': quantity
         }
     
+    # Model recommendations
+    if st.session_state.data_fetched:
+        st.subheader("🎯 Model Recommendations")
+        try:
+            recommendations = get_model_recommendations(
+                st.session_state.current_price, 
+                strategy_params.get('strike', st.session_state.current_price),
+                T, risk_free_rate, st.session_state.volatility, 
+                'call' if 'Call' in selected_strategy else 'put'
+            )
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.info(f"**Recommended Model**: {recommendations['primary']}")
+                st.caption(f"Reason: {recommendations['reason']}")
+            
+            with col2:
+                if 'high_vol' in recommendations:
+                    st.warning(f"**High Volatility**: {recommendations['high_vol']}")
+                    st.caption(f"Reason: {recommendations['high_vol_reason']}")
+                
+                if 'extreme_moneyness' in recommendations:
+                    st.warning(f"**Extreme Moneyness**: {recommendations['extreme_moneyness']}")
+                    st.caption(f"Reason: {recommendations['extreme_moneyness_reason']}")
+        
+        except Exception as e:
+            st.caption(f"Model recommendations unavailable: {str(e)}")
+    
+    # Data quality information
+    if st.session_state.data_fetched and st.session_state.has_options:
+        st.subheader("📊 Data Quality")
+        fetcher = DataFetcher()
+        quality_info = fetcher.get_data_quality_info(st.session_state.ticker)
+        
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            st.metric("Total Options", quality_info['total_options'])
+        
+        with col2:
+            st.metric("Options with Quotes", quality_info['options_with_quotes'])
+        
+        with col3:
+            st.metric("Quote Coverage", f"{quality_info['quote_coverage']:.1%}")
+        
+        st.caption(f"Data Source: {quality_info['data_source']} | Last Updated: {quality_info['last_updated']}")
+    
     # Analyze button
     if st.button("🔍 Analyze Strategy", type="primary"):
         try:
             # Create strategy object
             strategy = create_strategy(selected_strategy, **strategy_params)
             
-            # Calculate Greeks
-            greeks = strategy.calculate_greeks(
-                st.session_state.current_price,
-                T,
-                risk_free_rate,
-                st.session_state.volatility
-            )
+            # Prepare model parameters
+            model_params = {}
+            model_name = pricing_model.lower().replace(' ', '_').replace('(', '').replace(')', '')
             
-            # Display results
-            st.header("📊 Analysis Results")
+            if pricing_model == "Heston Model":
+                model_params = {
+                    'kappa': kappa, 'theta': theta, 'sigma_v': sigma_v, 
+                    'rho': rho, 'v0': v0
+                }
+                model_name = 'heston'
+            elif pricing_model == "Jump Diffusion":
+                model_params = {
+                    'lambda_jump': lambda_jump, 'mu_jump': mu_jump, 
+                    'sigma_jump': sigma_jump
+                }
+                model_name = 'jump_diffusion'
+            elif pricing_model == "Binomial Tree (American)":
+                model_params = {
+                    'n_steps': n_steps, 'american': american
+                }
+                model_name = 'binomial_tree'
+            elif pricing_model == "Monte Carlo":
+                model_params = {
+                    'n_simulations': n_simulations, 'n_steps': n_steps
+                }
+                if barrier_option:
+                    model_params.update({
+                        'barrier': barrier, 'barrier_type': barrier_type
+                    })
+                model_name = 'monte_carlo'
+            elif pricing_model == "Black-Scholes":
+                model_name = 'black_scholes'
+            
+            # Calculate strategy pricing
+            if pricing_model == "Model Comparison":
+                # Compare all models
+                st.header("📊 Model Comparison Results")
+                
+                # Get comparison results for each leg
+                comparison_results = {}
+                for i, leg in enumerate(strategy.legs):
+                    leg_comparison = compare_pricing_models(
+                        st.session_state.current_price, leg.strike, T, 
+                        risk_free_rate, st.session_state.volatility, 
+                        leg.option_type, **model_params
+                    )
+                    comparison_results[f"Leg {i+1}: {leg.position} {leg.option_type} {leg.strike}"] = leg_comparison
+                
+                # Display comparison results
+                for leg_name, results in comparison_results.items():
+                    st.subheader(f"{leg_name}")
+                    
+                    # Create comparison table
+                    comparison_data = []
+                    for model_name, result in results.items():
+                        if 'error' not in result:
+                            comparison_data.append({
+                                'Model': model_name,
+                                'Price': f"${result['price']:.4f}",
+                                'Delta': f"{result.get('delta', 'N/A')}",
+                                'Gamma': f"{result.get('gamma', 'N/A')}",
+                                'Theta': f"{result.get('theta', 'N/A')}",
+                                'Vega': f"{result.get('vega', 'N/A')}",
+                                'Rho': f"{result.get('rho', 'N/A')}"
+                            })
+                    
+                    if comparison_data:
+                        comparison_df = pd.DataFrame(comparison_data)
+                        st.dataframe(comparison_df, use_container_width=True)
+                    else:
+                        st.error("No valid pricing results available")
+                
+                # Calculate Greeks using Black-Scholes for consistency
+                greeks = strategy.calculate_greeks(
+                    st.session_state.current_price, T, risk_free_rate, st.session_state.volatility
+                )
+                
+            else:
+                # Single model analysis
+                st.header("📊 Analysis Results")
+                
+                # Calculate strategy pricing with selected model
+                pricing_result = calculate_strategy_price_advanced(
+                    strategy, st.session_state.current_price, T, 
+                    risk_free_rate, st.session_state.volatility, 
+                    model_name, **model_params
+                )
+                
+                # Display pricing results
+                st.subheader(f"🧮 {pricing_model} Results")
+                
+                col1, col2, col3 = st.columns(3)
+                
+                with col1:
+                    st.metric("Model Price", f"${pricing_result['total_price']:.4f}")
+                
+                with col2:
+                    st.metric("Model Used", pricing_result['model'].title())
+                
+                with col3:
+                    st.metric("Strategy", pricing_result['strategy'])
+                
+                # Display leg-by-leg pricing
+                if len(pricing_result['leg_prices']) > 1:
+                    st.subheader("📋 Leg-by-Leg Pricing")
+                    leg_data = []
+                    for leg_info in pricing_result['leg_prices']:
+                        leg_data.append({
+                            'Leg': leg_info['leg'],
+                            'Price': f"${leg_info['price']:.4f}",
+                            'Contribution': f"${leg_info['total_contribution']:.4f}",
+                            'Model': leg_info['model']
+                        })
+                    
+                    leg_df = pd.DataFrame(leg_data)
+                    st.dataframe(leg_df, use_container_width=True)
+                
+                # Calculate Greeks using Black-Scholes for consistency
+                greeks = strategy.calculate_greeks(
+                    st.session_state.current_price, T, risk_free_rate, st.session_state.volatility
+                )
             
             # Key metrics
             col1, col2, col3, col4 = st.columns(4)

@@ -6,3 +6,5 @@ plotly>=5.15.0
 python-dotenv>=1.0.0
 alpha-vantage>=2.3.1
 requests>=2.31.0
+yfinance>=0.2.18
+cachetools>=5.3.0
