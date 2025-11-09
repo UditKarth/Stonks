@@ -23,6 +23,9 @@ class CacheManager:
         # Cache for volatility data (10 minutes TTL)
         self.volatility_cache = TTLCache(maxsize=100, ttl=600)
         
+        # Cache for fundamental data (24 hours TTL - 86400 seconds)
+        self.fundamental_cache = TTLCache(maxsize=50, ttl=86400)
+        
         # Thread lock for thread-safe operations
         self._lock = threading.Lock()
     
@@ -198,7 +201,35 @@ class CacheManager:
                 return ticker in self.stock_quote_cache
             elif cache_type == 'volatility':
                 return ticker in self.volatility_cache
+            elif cache_type == 'fundamental':
+                return ticker in self.fundamental_cache
             return False
+    
+    def get(self, key: str) -> Optional[Any]:
+        """
+        Generic get method for fundamental data cache.
+        
+        Args:
+            key (str): Cache key
+            
+        Returns:
+            Any or None: Cached data
+        """
+        with self._lock:
+            return self.fundamental_cache.get(key)
+    
+    def set(self, key: str, value: Any, ttl: int = 86400) -> None:
+        """
+        Generic set method for fundamental data cache.
+        Note: TTL is set at cache initialization, but this allows flexibility.
+        
+        Args:
+            key (str): Cache key
+            value (Any): Data to cache
+            ttl (int): Time to live in seconds (default: 86400 = 24 hours)
+        """
+        with self._lock:
+            self.fundamental_cache[key] = value
 
 # Global cache manager instance
 cache_manager = CacheManager()

@@ -19,7 +19,7 @@ from plotting import plot_payoff_diagram, create_strategy_summary_table
 
 # Page configuration
 st.set_page_config(
-    page_title="Options Strategy Analyzer",
+    page_title="Stock Analysis Suite",
     page_icon="📈",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -39,6 +39,7 @@ st.markdown("""
         padding: 1rem;
         border-radius: 0.5rem;
         border-left: 4px solid #1f77b4;
+        color: #262730;
     }
     .warning-box {
         background-color: #fff3cd;
@@ -46,6 +47,20 @@ st.markdown("""
         border-radius: 0.5rem;
         padding: 1rem;
         margin: 1rem 0;
+        color: #262730;
+    }
+    .warning-box h3, .warning-box p, .warning-box li {
+        color: #262730 !important;
+    }
+    /* Ensure all text in styled divs is dark */
+    div[style*="background-color"] {
+        color: #262730 !important;
+    }
+    div[style*="background-color"] h3,
+    div[style*="background-color"] p,
+    div[style*="background-color"] li,
+    div[style*="background-color"] strong {
+        color: #262730 !important;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -106,7 +121,33 @@ def main():
     """Main application function."""
     
     # Header
-    st.markdown('<h1 class="main-header">📈 Options Strategy Analyzer</h1>', unsafe_allow_html=True)
+    st.markdown('<h1 class="main-header">📈 Stock Analysis Suite</h1>', unsafe_allow_html=True)
+    
+    # Features banner
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.markdown("""
+        <div style="text-align: center; padding: 1rem; background-color: #f0f2f6; border-radius: 0.5rem; color: #262730;">
+            <h3 style="color: #262730;">📊 Options Analysis</h3>
+            <p style="color: #262730;">Advanced options strategy analysis with 5 pricing models</p>
+        </div>
+        """, unsafe_allow_html=True)
+    with col2:
+        st.markdown("""
+        <div style="text-align: center; padding: 1rem; background-color: #e8f5e9; border-radius: 0.5rem; color: #262730;">
+            <h3 style="color: #262730;">📈 Fundamental Analysis</h3>
+            <p style="color: #262730;">NEW! Comprehensive stock due diligence</p>
+        </div>
+        """, unsafe_allow_html=True)
+    with col3:
+        st.markdown("""
+        <div style="text-align: center; padding: 1rem; background-color: #fff3cd; border-radius: 0.5rem; color: #262730;">
+            <h3 style="color: #262730;">📥 Export Reports</h3>
+            <p style="color: #262730;">LLM-optimized JSON & text exports</p>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    st.markdown("---")
     
     # Initialize session state
     if 'data_fetched' not in st.session_state:
@@ -118,6 +159,30 @@ def main():
     
     # Sidebar for inputs
     with st.sidebar:
+        # Navigation section with radio buttons
+        st.header("🧭 Navigation")
+        
+        # Page selection using radio buttons
+        selected_page = st.radio(
+            "Select Page:",
+            ["📊 Options Analysis", "📈 Fundamental Analysis"],
+            index=0,
+            label_visibility="collapsed"
+        )
+        
+        # Navigate based on selection
+        if selected_page == "📈 Fundamental Analysis":
+            st.switch_page("pages/1_Fundamental_Analysis")
+        
+        # Visual indicator
+        st.markdown("""
+        <div style="text-align: center; padding: 0.5rem; background-color: #1f77b4; border-radius: 0.5rem; color: white; margin-top: 0.5rem;">
+            <strong>Current: Options Analysis</strong>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        st.markdown("---")
+        
         st.header("📊 Market Data")
         
         # Stock ticker input
@@ -126,6 +191,12 @@ def main():
             value="AAPL",
             help="Enter the stock ticker symbol (e.g., AAPL, MSFT, GOOGL)"
         ).upper()
+        
+        # Quick link to fundamental analysis
+        st.markdown("---")
+        st.markdown("### 🔍 Quick Actions")
+        if st.button("📈 Go to Fundamental Analysis", use_container_width=True, type="primary"):
+            st.switch_page("pages/1_Fundamental_Analysis")
         
         # Fetch data button
         if st.button("📡 Fetch Market Data", type="primary"):
@@ -293,11 +364,28 @@ def main():
     if not st.session_state.data_fetched:
         st.markdown("""
         <div class="warning-box">
-            <h3>🚀 Getting Started</h3>
+            <h3>🚀 Getting Started - Options Analysis</h3>
             <p>1. Enter a stock ticker symbol in the sidebar</p>
             <p>2. Click "Fetch Market Data" to get current price and volatility</p>
             <p>3. Select your options strategy</p>
             <p>4. Enter option details below</p>
+            <p>5. Click "Analyze Strategy" to see results</p>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        st.markdown("---")
+        
+        st.markdown("""
+        <div style="background-color: #e8f5e9; padding: 1.5rem; border-radius: 0.5rem; border-left: 4px solid #4caf50; color: #262730;">
+            <h3 style="color: #262730;">✨ New Feature: Fundamental Analysis</h3>
+            <p style="color: #262730;"><strong style="color: #262730;">Comprehensive Stock Due Diligence Now Available!</strong></p>
+            <ul style="color: #262730;">
+                <li style="color: #262730;">📊 Company Overview with key financial ratios</li>
+                <li style="color: #262730;">📈 Financial Statements (Income, Balance Sheet, Cash Flow)</li>
+                <li style="color: #262730;">💰 Earnings Analysis (History & Estimates)</li>
+                <li style="color: #262730;">📥 LLM-Optimized Export (JSON & Structured Text)</li>
+            </ul>
+            <p style="color: #262730;"><strong style="color: #262730;">Access it:</strong> Click "📈 View Fundamental Analysis" in the sidebar or navigate to the "Fundamental Analysis" page in the menu!</p>
         </div>
         """, unsafe_allow_html=True)
         return
