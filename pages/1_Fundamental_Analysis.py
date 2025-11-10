@@ -233,6 +233,207 @@ def display_earnings(earnings, earnings_estimates):
         else:
             st.warning("Earnings estimates not available.")
 
+def display_news_sentiment(news_data):
+    """Display news and sentiment analysis section."""
+    st.header("📰 News & Sentiment Analysis")
+    
+    if not news_data or 'feed' not in news_data:
+        st.warning("News and sentiment data not available.")
+        return
+    
+    feed = news_data.get('feed', [])
+    if not feed:
+        st.info("No recent news articles found.")
+        return
+    
+    # Calculate overall sentiment
+    sentiment_scores = []
+    for article in feed[:20]:  # Analyze first 20 articles
+        ticker_sentiment = article.get('ticker_sentiment', [])
+        if ticker_sentiment:
+            for ts in ticker_sentiment:
+                relevance_score = float(ts.get('relevance_score', 0))
+                if relevance_score > 0.5:  # Only count relevant articles
+                    sentiment_score = float(ts.get('ticker_sentiment_score', 0))
+                    sentiment_scores.append(sentiment_score)
+    
+    if sentiment_scores:
+        avg_sentiment = sum(sentiment_scores) / len(sentiment_scores)
+        overall_sentiment = "Bullish" if avg_sentiment > 0.15 else "Bearish" if avg_sentiment < -0.15 else "Neutral"
+        
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("Overall Sentiment", overall_sentiment)
+        with col2:
+            st.metric("Average Sentiment Score", f"{avg_sentiment:.3f}")
+        with col3:
+            st.metric("Relevant Articles", len(sentiment_scores))
+    
+    # Display recent news articles
+    st.subheader("Recent News Articles")
+    
+    for article in feed[:10]:  # Show top 10 articles
+        with st.expander(f"📄 {article.get('title', 'No Title')[:80]}..."):
+            col1, col2 = st.columns(2)
+            with col1:
+                st.write(f"**Source:** {article.get('source', 'Unknown')}")
+                st.write(f"**Published:** {article.get('time_published', 'Unknown')}")
+            with col2:
+                # Get sentiment for this article
+                ticker_sentiment = article.get('ticker_sentiment', [])
+                if ticker_sentiment:
+                    for ts in ticker_sentiment:
+                        sentiment_label = ts.get('ticker_sentiment_label', 'Neutral')
+                        sentiment_score = float(ts.get('ticker_sentiment_score', 0))
+                        st.write(f"**Sentiment:** {sentiment_label} ({sentiment_score:.3f})")
+            
+            st.write(f"**Summary:** {article.get('summary', 'No summary available')}")
+            if article.get('url'):
+                st.markdown(f"[Read Full Article]({article['url']})")
+
+def display_insider_transactions(insider_data):
+    """Display insider transactions section."""
+    st.header("👥 Insider Transactions")
+    
+    if not insider_data or 'transactions' not in insider_data:
+        st.warning("Insider transaction data not available.")
+        return
+    
+    transactions = insider_data.get('transactions', [])
+    if not transactions:
+        st.info("No recent insider transactions found.")
+        return
+    
+    # Calculate buy/sell ratio
+    buys = [t for t in transactions if t.get('transaction_type', '').upper() in ['BUY', 'PURCHASE']]
+    sells = [t for t in transactions if t.get('transaction_type', '').upper() in ['SELL', 'SALE']]
+    
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("Total Transactions", len(transactions))
+    with col2:
+        st.metric("Buys", len(buys))
+    with col3:
+        st.metric("Sells", len(sells))
+    
+    if buys or sells:
+        buy_sell_ratio = len(buys) / len(sells) if sells else float('inf')
+        st.metric("Buy/Sell Ratio", f"{buy_sell_ratio:.2f}" if buy_sell_ratio != float('inf') else "N/A")
+    
+    # Display transactions table
+    st.subheader("Recent Insider Transactions")
+    
+    transaction_data = []
+    for trans in transactions[:20]:  # Show last 20 transactions
+        transaction_data.append({
+            'Date': trans.get('transaction_date', 'N/A'),
+            'Insider': trans.get('name', 'N/A'),
+            'Title': trans.get('position', 'N/A'),
+            'Type': trans.get('transaction_type', 'N/A'),
+            'Shares': trans.get('shares', 'N/A'),
+            'Price': format_currency(trans.get('price', 0)),
+            'Value': format_currency(trans.get('value', 0))
+        })
+    
+    if transaction_data:
+        df = pd.DataFrame(transaction_data)
+        st.dataframe(df, use_container_width=True)
+
+def display_dividends(dividends_data):
+    """Display dividend analysis section."""
+    st.header("💰 Dividend Analysis")
+    
+    if not dividends_data or 'dividends' not in dividends_data:
+        st.warning("Dividend data not available.")
+        return
+    
+    dividends = dividends_data.get('dividends', [])
+    if not dividends:
+        st.info("No dividend history available.")
+        return
+    
+    # Calculate dividend metrics
+    if dividends:
+        latest_dividend = dividends[0] if dividends else None
+        dividend_amounts = [float(d.get('dividend', 0)) for d in dividends if d.get('dividend')]
+        
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            if latest_dividend:
+                st.metric("Latest Dividend", format_currency(latest_dividend.get('dividend', 0)))
+                st.caption(f"Date: {latest_dividend.get('date', 'N/A')}")
+        with col2:
+            if dividend_amounts:
+                avg_dividend = sum(dividend_amounts) / len(dividend_amounts)
+                st.metric("Average Dividend", format_currency(avg_dividend))
+        with col3:
+            if dividend_amounts:
+                st.metric("Total Dividends (Period)", len(dividends))
+    
+    # Display dividend history
+    st.subheader("Dividend History")
+    
+    dividend_list = []
+    for div in dividends[:20]:  # Show last 20 dividends
+        dividend_list.append({
+            'Date': div.get('date', 'N/A'),
+            'Dividend': format_currency(div.get('dividend', 0))
+        })
+    
+    if dividend_list:
+        df = pd.DataFrame(dividend_list)
+        st.dataframe(df, use_container_width=True)
+        
+        # Create dividend timeline chart
+        if len(dividend_list) > 1:
+            dividend_df = pd.DataFrame(dividend_list)
+            dividend_df['Date'] = pd.to_datetime(dividend_df['Date'], errors='coerce')
+            dividend_df = dividend_df.sort_values('Date')
+            dividend_df['Dividend'] = dividend_df['Dividend'].str.replace('$', '').str.replace(',', '').astype(float, errors='ignore')
+            
+            fig = go.Figure()
+            fig.add_trace(go.Scatter(
+                x=dividend_df['Date'],
+                y=dividend_df['Dividend'],
+                mode='lines+markers',
+                name='Dividend',
+                line=dict(color='#1f77b4', width=2)
+            ))
+            fig.update_layout(
+                title="Dividend History Timeline",
+                xaxis_title="Date",
+                yaxis_title="Dividend Amount ($)",
+                hovermode='x unified'
+            )
+            st.plotly_chart(fig, use_container_width=True)
+
+def display_splits(splits_data):
+    """Display stock split history section."""
+    st.header("📊 Stock Split History")
+    
+    if not splits_data or 'splits' not in splits_data:
+        st.warning("Stock split data not available.")
+        return
+    
+    splits = splits_data.get('splits', [])
+    if not splits:
+        st.info("No stock split history available.")
+        return
+    
+    # Display split history
+    st.subheader("Split History")
+    
+    split_list = []
+    for split in splits[:20]:  # Show last 20 splits
+        split_list.append({
+            'Date': split.get('date', 'N/A'),
+            'Split Ratio': split.get('split', 'N/A')
+        })
+    
+    if split_list:
+        df = pd.DataFrame(split_list)
+        st.dataframe(df, use_container_width=True)
+
 def main():
     """Main function for fundamental analysis page."""
     st.set_page_config(
@@ -358,11 +559,28 @@ def main():
             # Calculate metrics
             financial_metrics = data_aggregator.calculate_financial_metrics(aggregated_data)
             
-            st.success(f"✅ Successfully fetched data for {ticker}")
+            st.success(f"✅ Successfully fetched fundamental data for {ticker}")
             
         except Exception as e:
-            st.error(f"❌ Error fetching data for {ticker}: {str(e)}")
+            st.error(f"❌ Error fetching fundamental data for {ticker}: {str(e)}")
             st.stop()
+    
+    # Fetch Phase 2 data (News, Insider Transactions)
+    news_data = None
+    insider_data = None
+    
+    with st.spinner(f"Fetching market intelligence data for {ticker}..."):
+        try:
+            news_data = fundamental_fetcher.get_news_sentiment(ticker, limit=50)
+            st.success("✅ News & sentiment data fetched")
+        except Exception as e:
+            st.warning(f"⚠️ Could not fetch news data: {str(e)}")
+        
+        try:
+            insider_data = fundamental_fetcher.get_insider_transactions(ticker)
+            st.success("✅ Insider transactions data fetched")
+        except Exception as e:
+            st.warning(f"⚠️ Could not fetch insider transactions: {str(e)}")
     
     # Display sections
     overview = fundamental_data.get('overview')
@@ -371,6 +589,8 @@ def main():
     cash_flow = fundamental_data.get('cash_flow')
     earnings = fundamental_data.get('earnings')
     earnings_estimates = fundamental_data.get('earnings_estimates')
+    dividends = fundamental_data.get('dividends')
+    splits = fundamental_data.get('splits')
     
     # Company Overview
     display_company_overview(overview)
@@ -386,6 +606,24 @@ def main():
     display_earnings(earnings, earnings_estimates)
     
     st.divider()
+    
+    # Phase 2: Market Intelligence & Sentiment
+    if news_data:
+        display_news_sentiment(news_data)
+        st.divider()
+    
+    if insider_data:
+        display_insider_transactions(insider_data)
+        st.divider()
+    
+    # Corporate Actions
+    if dividends:
+        display_dividends(dividends)
+        st.divider()
+    
+    if splits:
+        display_splits(splits)
+        st.divider()
     
     # Export Section
     st.header("📥 Export Report")

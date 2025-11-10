@@ -58,6 +58,10 @@ class DataAggregator:
             'corporate_actions': {
                 'dividends': None,
                 'splits': None
+            },
+            'market_intelligence': {
+                'news_sentiment': None,
+                'insider_transactions': None
             }
         }
         
@@ -92,6 +96,19 @@ class DataAggregator:
             aggregated_data['market_data']['volatility'] = volatility
         except Exception as e:
             logger.warning(f"Error fetching volatility for {ticker}: {str(e)}")
+        
+        # Fetch Phase 2: Market Intelligence data
+        try:
+            news_sentiment = self.fundamental_fetcher.get_news_sentiment(ticker, limit=50)
+            aggregated_data['market_intelligence']['news_sentiment'] = news_sentiment
+        except Exception as e:
+            logger.warning(f"Error fetching news sentiment for {ticker}: {str(e)}")
+        
+        try:
+            insider_transactions = self.fundamental_fetcher.get_insider_transactions(ticker)
+            aggregated_data['market_intelligence']['insider_transactions'] = insider_transactions
+        except Exception as e:
+            logger.warning(f"Error fetching insider transactions for {ticker}: {str(e)}")
         
         return aggregated_data
     

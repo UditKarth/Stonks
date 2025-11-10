@@ -356,6 +356,153 @@ class FundamentalDataFetcher:
             logger.error(f"Error fetching splits for {ticker}: {str(e)}")
             raise Exception(f"Failed to fetch splits for {ticker}: {str(e)}")
     
+    def get_news_sentiment(self, ticker: str, limit: int = 50) -> Dict:
+        """
+        Get news and sentiment data for a ticker.
+        
+        Args:
+            ticker: Stock ticker symbol
+            limit: Maximum number of articles to return (default: 50, max: 1000)
+            
+        Returns:
+            Dict: News and sentiment data
+        """
+        cache_key = f"news_sentiment_{ticker}_{limit}"
+        cached_data = self.cache_manager.get(cache_key)
+        if cached_data is not None:
+            logger.info(f"Using cached news sentiment for {ticker}")
+            return cached_data
+        
+        try:
+            logger.info(f"Fetching news sentiment for {ticker}")
+            # NEWS_SENTIMENT doesn't use symbol parameter, uses tickers
+            self._rate_limit_check()
+            params = {
+                'function': 'NEWS_SENTIMENT',
+                'tickers': ticker,
+                'limit': limit,
+                'apikey': self.api_key
+            }
+            response = requests.get(self.base_url, params=params, timeout=30)
+            response.raise_for_status()
+            data = response.json()
+            
+            if 'Error Message' in data:
+                raise Exception(f"Alpha Vantage API Error: {data['Error Message']}")
+            if 'Note' in data:
+                raise Exception(f"Alpha Vantage API Note: {data['Note']}")
+            
+            # Cache for 1 hour (news updates frequently)
+            self.cache_manager.set(cache_key, data, ttl=3600)
+            
+            logger.info(f"Successfully fetched news sentiment for {ticker}")
+            return data
+            
+        except Exception as e:
+            logger.error(f"Error fetching news sentiment for {ticker}: {str(e)}")
+            raise Exception(f"Failed to fetch news sentiment for {ticker}: {str(e)}")
+    
+    def get_insider_transactions(self, ticker: str) -> Dict:
+        """
+        Get insider transactions for a ticker.
+        
+        Args:
+            ticker: Stock ticker symbol
+            
+        Returns:
+            Dict: Insider transaction data
+        """
+        cache_key = f"insider_transactions_{ticker}"
+        cached_data = self.cache_manager.get(cache_key)
+        if cached_data is not None:
+            logger.info(f"Using cached insider transactions for {ticker}")
+            return cached_data
+        
+        try:
+            logger.info(f"Fetching insider transactions for {ticker}")
+            data = self._make_api_request('INSIDER_TRANSACTIONS', symbol=ticker)
+            
+            # Cache for 1 day
+            self.cache_manager.set(cache_key, data, ttl=86400)
+            
+            logger.info(f"Successfully fetched insider transactions for {ticker}")
+            return data
+            
+        except Exception as e:
+            logger.error(f"Error fetching insider transactions for {ticker}: {str(e)}")
+            raise Exception(f"Failed to fetch insider transactions for {ticker}: {str(e)}")
+    
+    def get_top_gainers_losers(self) -> Dict:
+        """
+        Get top gainers, losers, and most actively traded tickers (US Market).
+        
+        Returns:
+            Dict: Top gainers/losers data
+        """
+        cache_key = "top_gainers_losers"
+        cached_data = self.cache_manager.get(cache_key)
+        if cached_data is not None:
+            logger.info("Using cached top gainers/losers")
+            return cached_data
+        
+        try:
+            logger.info("Fetching top gainers/losers")
+            # TOP_GAINERS_LOSERS doesn't need a symbol parameter
+            self._rate_limit_check()
+            params = {
+                'function': 'TOP_GAINERS_LOSERS',
+                'apikey': self.api_key
+            }
+            response = requests.get(self.base_url, params=params, timeout=30)
+            response.raise_for_status()
+            data = response.json()
+            
+            if 'Error Message' in data:
+                raise Exception(f"Alpha Vantage API Error: {data['Error Message']}")
+            if 'Note' in data:
+                raise Exception(f"Alpha Vantage API Note: {data['Note']}")
+            
+            # Cache for 15 minutes (market data updates frequently)
+            self.cache_manager.set(cache_key, data, ttl=900)
+            
+            logger.info("Successfully fetched top gainers/losers")
+            return data
+            
+        except Exception as e:
+            logger.error(f"Error fetching top gainers/losers: {str(e)}")
+            raise Exception(f"Failed to fetch top gainers/losers: {str(e)}")
+    
+    def get_earnings_call_transcript(self, ticker: str, quarter: str) -> Dict:
+        """
+        Get earnings call transcript for a specific quarter.
+        
+        Args:
+            ticker: Stock ticker symbol
+            quarter: Fiscal quarter in YYYYQM format (e.g., '2024Q1')
+            
+        Returns:
+            Dict: Earnings call transcript data
+        """
+        cache_key = f"earnings_transcript_{ticker}_{quarter}"
+        cached_data = self.cache_manager.get(cache_key)
+        if cached_data is not None:
+            logger.info(f"Using cached earnings transcript for {ticker} {quarter}")
+            return cached_data
+        
+        try:
+            logger.info(f"Fetching earnings transcript for {ticker} {quarter}")
+            data = self._make_api_request('EARNINGS_CALL_TRANSCRIPT', symbol=ticker, quarter=quarter)
+            
+            # Cache for 1 day
+            self.cache_manager.set(cache_key, data, ttl=86400)
+            
+            logger.info(f"Successfully fetched earnings transcript for {ticker} {quarter}")
+            return data
+            
+        except Exception as e:
+            logger.error(f"Error fetching earnings transcript for {ticker} {quarter}: {str(e)}")
+            raise Exception(f"Failed to fetch earnings transcript for {ticker} {quarter}: {str(e)}")
+    
     def get_all_fundamental_data(self, ticker: str) -> Dict:
         """
         Get all fundamental data for a ticker in one call (with caching).

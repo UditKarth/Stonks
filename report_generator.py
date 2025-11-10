@@ -43,6 +43,7 @@ class ReportGenerator:
             'earnings': aggregated_data.get('earnings', {}),
             'market_data': aggregated_data.get('market_data', {}),
             'corporate_actions': aggregated_data.get('corporate_actions', {}),
+            'market_intelligence': aggregated_data.get('market_intelligence', {}),
             'financial_metrics': financial_metrics,
             'summary': self._generate_summary(aggregated_data, financial_metrics)
         }
@@ -147,6 +148,50 @@ class ReportGenerator:
                 text_lines.append(f"Current Price: ${market_data['current_price']:.2f}")
             if market_data.get('volatility'):
                 text_lines.append(f"Historical Volatility: {market_data['volatility']:.2%}")
+            text_lines.append("")
+        
+        # Market Intelligence (Phase 2)
+        market_intelligence = report.get('market_intelligence', {})
+        if market_intelligence:
+            text_lines.append("=== MARKET INTELLIGENCE ===")
+            
+            # News & Sentiment
+            news_sentiment = market_intelligence.get('news_sentiment', {})
+            if news_sentiment and news_sentiment.get('feed'):
+                feed = news_sentiment['feed']
+                text_lines.append(f"Recent News Articles: {len(feed)}")
+                
+                # Calculate overall sentiment
+                sentiment_scores = []
+                for article in feed[:20]:
+                    ticker_sentiment = article.get('ticker_sentiment', [])
+                    if ticker_sentiment:
+                        for ts in ticker_sentiment:
+                            relevance_score = float(ts.get('relevance_score', 0))
+                            if relevance_score > 0.5:
+                                sentiment_score = float(ts.get('ticker_sentiment_score', 0))
+                                sentiment_scores.append(sentiment_score)
+                
+                if sentiment_scores:
+                    avg_sentiment = sum(sentiment_scores) / len(sentiment_scores)
+                    overall_sentiment = "Bullish" if avg_sentiment > 0.15 else "Bearish" if avg_sentiment < -0.15 else "Neutral"
+                    text_lines.append(f"Overall Sentiment: {overall_sentiment} (Score: {avg_sentiment:.3f})")
+                    text_lines.append(f"Relevant Articles: {len(sentiment_scores)}")
+            
+            # Insider Transactions
+            insider_transactions = market_intelligence.get('insider_transactions', {})
+            if insider_transactions and insider_transactions.get('transactions'):
+                transactions = insider_transactions['transactions']
+                buys = [t for t in transactions if t.get('transaction_type', '').upper() in ['BUY', 'PURCHASE']]
+                sells = [t for t in transactions if t.get('transaction_type', '').upper() in ['SELL', 'SALE']]
+                
+                text_lines.append(f"Insider Transactions: {len(transactions)} total")
+                text_lines.append(f"  - Buys: {len(buys)}")
+                text_lines.append(f"  - Sells: {len(sells)}")
+                if buys or sells:
+                    buy_sell_ratio = len(buys) / len(sells) if sells else float('inf')
+                    text_lines.append(f"  - Buy/Sell Ratio: {buy_sell_ratio:.2f}" if buy_sell_ratio != float('inf') else "  - Buy/Sell Ratio: N/A")
+            
             text_lines.append("")
         
         # Summary
